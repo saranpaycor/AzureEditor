@@ -186,27 +186,19 @@
       flex-wrap: wrap;
     }
 
-    /* ── Output tabs ─────────────────────────────────────────────── */
-    .out-tabs { display: flex; border-bottom: 1px solid #3e3e42; background: #2d2d30; flex-shrink: 0; }
-    .out-tab {
-      padding: 5px 16px; font-size: 11px; cursor: pointer;
-      color: #777; border-bottom: 2px solid transparent; user-select: none;
-    }
-    .out-tab.on { color: #d4d4d4; border-bottom-color: #0078d4; }
-    .out-tab:hover { color: #aaa; }
-    .out-tab .badge-cnt {
-      display: inline-block; background: #f44747; color: #fff;
-      font-size: 9px; border-radius: 8px; padding: 0 5px; margin-left: 4px; vertical-align: middle;
+    /* ── Unified output panel ────────────────────────────────────── */
+    #out-unified {
+      flex: 1; overflow-y: auto; min-height: 0;
+      background: #0d0d0d;
     }
 
-    .out-body { flex: 1; overflow-y: auto; min-height: 0; }
-
-    /* ── Messages pane ───────────────────────────────────────────── */
-    #out-messages {
+    /* ── Log messages ────────────────────────────────────────────── */
+    .log-line {
       font-family: 'Consolas', 'Courier New', monospace;
       font-size: 12px; line-height: 1.55;
-      background: #0d0d0d; color: #d4d4d4;
-      padding: 10px 12px; white-space: pre-wrap; word-break: break-word;
+      padding: 0 12px;
+      white-space: pre-wrap; word-break: break-word;
+      display: block;
     }
     .out-info    { color: #9cdcfe; }
     .out-error   { color: #f44747; }
@@ -214,13 +206,13 @@
     .out-header  { color: #dcdcaa; font-weight: bold; }
     .out-data    { color: #4ec9b0; }
 
-    /* ── Results pane ────────────────────────────────────────────── */
-    #out-results { background: #141414; padding: 0; }
+    /* ── Results ─────────────────────────────────────────────────── */
+    .result-block { border-top: 1px solid #222; margin: 6px 0; }
 
-    .result-block { border-bottom: 1px solid #222; }
+    .result-separator { border: none; border-top: 1px solid #1e1e1e; margin: 0; }
     .result-block-header {
       padding: 5px 12px; font-size: 11px; font-weight: 600;
-      color: #dcdcaa; background: #252526; border-bottom: 1px solid #2a2a2a;
+      color: #dcdcaa; background: #1a1a1a; border-top: 1px solid #3e3e42; border-bottom: 1px solid #2a2a2a;
       display: flex; align-items: center; gap: 8px;
       position: sticky; top: 0; z-index: 2;
     }
@@ -375,22 +367,12 @@
 
   <!-- ── Output Panel ── -->
   <div class="panel stretch">
-    <div class="panel-title">
-      Output
+    <div class="panel-title" style="display:flex;align-items:center">
+      <span>Output</span>
       <span id="exec-summary" style="font-weight:400;font-size:10px;color:#9cdcfe;margin-left:14px"></span>
+      <span id="err-summary" style="font-weight:600;font-size:10px;color:#f44747;margin-left:10px"></span>
     </div>
-    <div class="out-tabs">
-      <div class="out-tab on" id="otab-results"  onclick="switchOutTab('results',this)">
-        Results <span id="badge-results" class="badge-cnt" style="display:none">0</span>
-      </div>
-      <div class="out-tab"   id="otab-messages" onclick="switchOutTab('messages',this)">
-        Messages <span id="badge-errors" class="badge-cnt" style="display:none">0</span>
-      </div>
-    </div>
-    <div class="out-body" id="out-results">
-      <div class="no-results">No results yet — execute a query to see results here.</div>
-    </div>
-    <div class="out-body" id="out-messages" style="display:none"></div>
+    <div id="out-unified"></div>
     <div class="out-toolbar">
       <button class="sec" onclick="clearOut()">Clear</button>
       <span style="font-size:11px;color:#555;margin-left:auto" id="row-count"></span>
@@ -409,22 +391,12 @@
 let busy = false;
 let _errCount = 0, _resultCount = 0, _totalRows = 0, _totalAffected = 0;
 
-// ── output tabs ──────────────────────────────────────────────────────────
+// ── SQL source tabs ───────────────────────────────────────────────────────
 function switchTab(name, el) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('on'));
   document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('on'));
   el.classList.add('on');
   document.getElementById('pane-' + name).classList.add('on');
-}
-
-function switchOutTab(name, el) {
-  document.querySelectorAll('.out-tab').forEach(t => t.classList.remove('on'));
-  document.getElementById('out-results').style.display  = name === 'results'  ? '' : 'none';
-  document.getElementById('out-messages').style.display = name === 'messages' ? '' : 'none';
-  el.classList.add('on');
-  // Clear badge for the tab we just switched to
-  if (name === 'messages') { document.getElementById('badge-errors').style.display = 'none'; _errCount = 0; }
-  if (name === 'results')  { document.getElementById('badge-results').style.display = 'none'; _resultCount = 0; }
 }
 
 // ── progress ─────────────────────────────────────────────────────────────
@@ -439,49 +411,30 @@ function setSB(text, dotCls) {
   d.className = 'sb-dot' + (dotCls ? ' ' + dotCls : '');
 }
 
-// ── messages (log) pane ──────────────────────────────────────────────────
+// ── log to unified panel ──────────────────────────────────────────────────
 function log(text, tag) {
-  const pane = document.getElementById('out-messages');
+  const pane = document.getElementById('out-unified');
   const ts   = new Date().toLocaleTimeString('en-GB');
   const s    = document.createElement('span');
-  s.className = 'out-' + (tag || 'info');
-  s.textContent = '[' + ts + ']  ' + text + '\n';
+  s.className = 'log-line out-' + (tag || 'info');
+  s.textContent = '[' + ts + ']  ' + text;
   pane.appendChild(s);
   pane.scrollTop = pane.scrollHeight;
 
-  // Badge on Messages tab if it's not visible
   if (tag === 'error') {
     _errCount++;
-    const isVisible = document.getElementById('out-messages').style.display !== 'none';
-    if (!isVisible) {
-      const b = document.getElementById('badge-errors');
-      b.textContent = _errCount;
-      b.style.display = '';
-    }
+    updateErrSummary();
   }
-
   updateRowCount();
 }
 
-// ── results pane ─────────────────────────────────────────────────────────
+// ── results in unified panel ──────────────────────────────────────────────
 function renderTable(msg) {
-  const pane = document.getElementById('out-results');
-
-  // Remove placeholder
-  const ph = pane.querySelector('.no-results');
-  if (ph) ph.remove();
+  const pane = document.getElementById('out-unified');
 
   _totalRows += msg.row_count;
   _resultCount++;
   updateSummary();
-
-  // Badge on Results tab if not visible
-  const isVisible = document.getElementById('out-results').style.display !== 'none';
-  if (!isVisible) {
-    const b = document.getElementById('badge-results');
-    b.textContent = _resultCount;
-    b.style.display = '';
-  }
 
   const block = document.createElement('div');
   block.className = 'result-block';
@@ -546,10 +499,7 @@ function renderTable(msg) {
 }
 
 function renderAffected(msg) {
-  const pane = document.getElementById('out-results');
-  const ph = pane.querySelector('.no-results');
-  if (ph) ph.remove();
-
+  const pane = document.getElementById('out-unified');
   _totalAffected += msg.count;
   updateSummary();
 
@@ -562,9 +512,7 @@ function renderAffected(msg) {
 }
 
 function renderExecError(file, batch, total, text) {
-  const pane = document.getElementById('out-results');
-  const ph = pane.querySelector('.no-results');
-  if (ph) ph.remove();
+  const pane = document.getElementById('out-unified');
 
   const block = document.createElement('div');
   block.className = 'result-block';
@@ -582,13 +530,7 @@ function renderExecError(file, batch, total, text) {
   block.appendChild(banner);
 
   pane.appendChild(block);
-  pane.scrollTop = pane.scrollHeight;
-
-  // Auto-switch to results so user sees the error inline
-  document.querySelectorAll('.out-tab').forEach(t => t.classList.remove('on'));
-  document.getElementById('otab-results').classList.add('on');
-  document.getElementById('out-results').style.display  = '';
-  document.getElementById('out-messages').style.display = 'none';
+  pane.scrollTop = pane.scrollHeight;  // always scroll to error
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────
@@ -603,19 +545,21 @@ function updateSummary() {
   document.getElementById('exec-summary').textContent = parts.join('  •  ');
 }
 
+function updateErrSummary() {
+  const el = document.getElementById('err-summary');
+  el.textContent = _errCount > 0 ? `⚠ ${_errCount} error${_errCount !== 1 ? 's' : ''}` : '';
+}
+
 function updateRowCount() {
-  const n = document.getElementById('out-messages').querySelectorAll('span').length;
-  document.getElementById('row-count').textContent = n + ' message(s)';
+  const n = document.getElementById('out-unified').querySelectorAll('.log-line,.result-block,.affected-row').length;
+  document.getElementById('row-count').textContent = n + ' item(s)';
 }
 
 function clearOut() {
-  document.getElementById('out-results').innerHTML =
-    '<div class="no-results">No results yet — execute a query to see results here.</div>';
-  document.getElementById('out-messages').innerHTML = '';
+  document.getElementById('out-unified').innerHTML = '';
   document.getElementById('exec-summary').textContent = '';
+  document.getElementById('err-summary').textContent = '';
   document.getElementById('row-count').textContent = '';
-  document.getElementById('badge-errors').style.display = 'none';
-  document.getElementById('badge-results').style.display = 'none';
   _errCount = _resultCount = _totalRows = _totalAffected = 0;
 }
 
@@ -703,12 +647,7 @@ function onConnFail(err) {
   const cs = document.getElementById('conn-status');
   cs.textContent = 'Connection failed';
   cs.className = 'err';
-  setSB('Connection failed — see Messages', 'err');
-  // Auto-switch to Messages tab so errors are visible
-  document.querySelectorAll('.out-tab').forEach(t => t.classList.remove('on'));
-  document.getElementById('otab-messages').classList.add('on');
-  document.getElementById('out-results').style.display  = 'none';
-  document.getElementById('out-messages').style.display = '';
+  setSB('Connection failed — see Output', 'err');
 }
 
 async function doDisconnect() {
@@ -745,16 +684,10 @@ async function doExec(mode) {
     if (!body.sql_text.trim()) { alert('SQL editor is empty.'); return; }
   }
 
-  // Reset result counters and auto-switch to Results tab
-  _resultCount = _totalRows = _totalAffected = 0;
+  // Reset counters for new execution
+  _errCount = _resultCount = _totalRows = _totalAffected = 0;
   document.getElementById('exec-summary').textContent = '';
-  document.querySelectorAll('.out-tab').forEach(t => t.classList.remove('on'));
-  document.getElementById('otab-results').classList.add('on');
-  document.getElementById('out-results').style.display  = '';
-  document.getElementById('out-messages').style.display = 'none';
-  document.getElementById('badge-errors').style.display  = 'none';
-  document.getElementById('badge-results').style.display = 'none';
-  _errCount = 0;
+  document.getElementById('err-summary').textContent = '';
 
   busy = true;
   setProgress(true);

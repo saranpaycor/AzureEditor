@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Azure SQL Editor — Microsoft Entra MFA</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #1e1e1e;
+      color: #d4d4d4;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Header ──────────────────────────────────────────────────── */
+    header {
+      background: #2d2d30;
+      padding: 9px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-bottom: 1px solid #3e3e42;
+      flex-shrink: 0;
+    }
+    header h1 { font-size: 13px; font-weight: 600; color: #ccc; }
+    .badge {
+      background: #0078d4;
+      color: #fff;
+      font-size: 10px;
+      padding: 2px 9px;
+      border-radius: 10px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+    }
+    #driver-label { font-size: 11px; color: #777; margin-left: auto; }
+
+    /* ── Progress bar ────────────────────────────────────────────── */
+    .progress-wrap { height: 2px; background: #3e3e42; flex-shrink: 0; overflow: hidden; }
+    .progress-bar  { height: 100%; background: #0078d4; width: 0; }
+    .progress-bar.running { animation: slide 1.4s infinite linear; width: 30%; }
+    @keyframes slide { from { transform: translateX(-120%); } to { transform: translateX(450%); } }
+
+    /* ── Main layout ─────────────────────────────────────────────── */
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 10px 14px;
+      gap: 8px;
+      overflow: hidden;
+    }
+
+    /* ── Panels ──────────────────────────────────────────────────── */
+    .panel { background: #252526; border: 1px solid #3e3e42; border-radius: 4px; flex-shrink: 0; }
+    .panel.stretch { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+
+    .panel-title {
+      background: #2d2d30;
+      padding: 5px 12px;
+      font-size: 10px;
+      font-weight: 700;
+      color: #9cdcfe;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      border-bottom: 1px solid #3e3e42;
+      flex-shrink: 0;
+    }
+    .panel-body { padding: 10px 12px; }
+    .panel.stretch .panel-body { flex: 1; display: flex; flex-direction: column; padding: 0; min-height: 0; }
+
+    /* ── Inputs / buttons ────────────────────────────────────────── */
+    label.lbl { font-size: 12px; color: #9cdcfe; white-space: nowrap; }
+
+    input[type="text"] {
+      background: #3c3c3c;
+      border: 1px solid #555;
+      color: #d4d4d4;
+      padding: 5px 8px;
+      font-size: 12px;
+      border-radius: 3px;
+      width: 100%;
+      font-family: inherit;
+    }
+    input[type="text"]:focus { outline: none; border-color: #0078d4; }
+
+    textarea {
+      width: 100%;
+      background: #1a1a1a;
+      border: 1px solid #555;
+      color: #d4d4d4;
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 12px;
+      padding: 8px;
+      resize: vertical;
+      border-radius: 3px;
+      min-height: 110px;
+    }
+    textarea:focus { outline: none; border-color: #0078d4; }
+
+    button {
+      background: #0e639c;
+      color: #fff;
+      border: none;
+      padding: 5px 14px;
+      font-size: 12px;
+      border-radius: 3px;
+      cursor: pointer;
+      white-space: nowrap;
+      font-family: inherit;
+      transition: background .15s;
+      flex-shrink: 0;
+    }
+    button:hover  { background: #1177bb; }
+    button:disabled { background: #3a3a3a; color: #666; cursor: default; }
+    button.sec    { background: #3c3c3c; border: 1px solid #555; }
+    button.sec:hover { background: #505050; }
+    button.go     { background: #0d6a50; }
+    button.go:hover  { background: #0f8564; }
+    button.go:disabled { background: #3a3a3a; color: #666; cursor: default; }
+    button.red    { background: #6b1414; }
+    button.red:hover { background: #8c1a1a; }
+
+    /* ── Connection panel ────────────────────────────────────────── */
+    .conn-grid {
+      display: grid;
+      grid-template-columns: auto 1fr 18px auto 1fr;
+      gap: 7px 10px;
+      align-items: center;
+    }
+    .spacer { width: 18px; }
+    .conn-row2 {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 8px;
+      flex-wrap: wrap;
+    }
+    .status-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: #555;
+      flex-shrink: 0;
+      transition: background .3s;
+    }
+    .status-dot.ok   { background: #4ec9b0; }
+    .status-dot.err  { background: #f44747; }
+    .status-dot.busy { background: #dcdcaa; animation: blink 1s infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.25} }
+
+    #conn-status { font-size: 12px; color: #888; }
+    #conn-status.ok  { color: #4ec9b0; }
+    #conn-status.err { color: #f44747; }
+
+    .chk { display: flex; align-items: center; gap: 5px; font-size: 12px; cursor: pointer; }
+    .chk input { cursor: pointer; }
+
+    /* ── Tabs ────────────────────────────────────────────────────── */
+    .tabs { display: flex; border-bottom: 1px solid #3e3e42; flex-shrink: 0; }
+    .tab {
+      padding: 6px 16px;
+      font-size: 12px;
+      cursor: pointer;
+      color: #888;
+      border-bottom: 2px solid transparent;
+      user-select: none;
+    }
+    .tab.on { color: #d4d4d4; border-bottom-color: #0078d4; }
+    .tab:hover { color: #ccc; }
+
+    .tab-pane { display: none; padding: 10px 12px; }
+    .tab-pane.on { display: block; }
+
+    .path-row { display: flex; gap: 6px; align-items: center; }
+    .path-row input { flex: 1; }
+
+    .exec-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 8px;
+      flex-wrap: wrap;
+    }
+
+    /* ── Output ──────────────────────────────────────────────────── */
+    #output {
+      flex: 1;
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      background: #0d0d0d;
+      color: #d4d4d4;
+      padding: 10px 12px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .out-info    { color: #9cdcfe; }
+    .out-error   { color: #f44747; }
+    .out-success { color: #4ec9b0; }
+    .out-header  { color: #dcdcaa; font-weight: bold; }
+    .out-data    { color: #ce9178; }
+
+    .out-toolbar {
+      padding: 5px 10px;
+      border-top: 1px solid #3e3e42;
+      background: #2d2d30;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    /* ── Status bar ──────────────────────────────────────────────── */
+    #status-bar {
+      background: #007acc;
+      color: #fff;
+      font-size: 11px;
+      padding: 3px 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .sb-dot { width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,.5); }
+    .sb-dot.ok   { background: #4ec9b0; }
+    .sb-dot.busy { background: #dcdcaa; animation: blink 1s infinite; }
+    .sb-dot.err  { background: #f44747; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Azure SQL Editor</h1>
+  <span class="badge">Microsoft Entra MFA</span>
+  <span id="driver-label">{{ driver }}</span>
+</header>
+
+<div class="progress-wrap"><div class="progress-bar" id="prog"></div></div>
+
+<div class="main">
+
+  <!-- ── Connection Panel ── -->
+  <div class="panel">
+    <div class="panel-title">Connection</div>
+    <div class="panel-body">
+      <div class="conn-grid">
+        <label class="lbl">Server Name</label>
+        <input type="text" id="inp-server"   placeholder="e.g. myserver.database.windows.net" value="paycorproduction2a.database.windows.net">
+        <span class="spacer"></span>
+        <label class="lbl">Database</label>
+        <input type="text" id="inp-database" placeholder="master" value="master">
+
+        <label class="lbl">Username</label>
+        <input type="text" id="inp-username" value="sar071023@paycor.net">
+        <span class="spacer"></span>
+        <span></span><span></span>
+      </div>
+
+      <div class="conn-row2">
+        <div class="status-dot" id="s-dot"></div>
+        <button id="btn-conn"   onclick="doConnect()">Connect (MFA)</button>
+        <button id="btn-disc"   class="red" onclick="doDisconnect()" disabled>Disconnect</button>
+        <label class="chk"><input type="checkbox" id="chk-trust"> Trust Server Certificate</label>
+        <span id="conn-status">Not connected</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SQL Source Panel ── -->
+  <div class="panel">
+    <div class="panel-title">SQL Source</div>
+    <div class="tabs">
+      <div class="tab on"  id="ttab-file"   onclick="switchTab('file',this)">Single File</div>
+      <div class="tab"     id="ttab-folder" onclick="switchTab('folder',this)">Folder</div>
+      <div class="tab"     id="ttab-editor" onclick="switchTab('editor',this)">SQL Editor</div>
+    </div>
+
+    <!-- File tab -->
+    <div class="tab-pane on" id="pane-file">
+      <div class="path-row">
+        <input type="text" id="inp-file" placeholder="Path to .sql file  (or Browse →)">
+        <button class="sec" onclick="doBrowse('file')">Browse…</button>
+      </div>
+      <div class="exec-bar">
+        <button class="go" id="btn-exec-file"   onclick="doExec('file')"   disabled>▶ Execute File</button>
+        <label class="chk"><input type="checkbox" id="chk-ac-file"> Auto-commit batches</label>
+        <label class="chk"><input type="checkbox" id="chk-se-file"> Stop on first error</label>
+      </div>
+    </div>
+
+    <!-- Folder tab -->
+    <div class="tab-pane" id="pane-folder">
+      <div class="path-row">
+        <input type="text" id="inp-folder" placeholder="Folder containing .sql files  (or Browse →)">
+        <button class="sec" onclick="doBrowse('folder')">Browse…</button>
+      </div>
+      <div class="exec-bar">
+        <button class="go" id="btn-exec-folder" onclick="doExec('folder')" disabled>▶ Execute All Files</button>
+        <label class="chk"><input type="checkbox" id="chk-ac-folder"> Auto-commit batches</label>
+        <label class="chk"><input type="checkbox" id="chk-se-folder"> Stop on first error</label>
+      </div>
+    </div>
+
+    <!-- SQL Editor tab -->
+    <div class="tab-pane" id="pane-editor">
+      <textarea id="sql-editor" placeholder="Type or paste SQL here…&#10;Use GO on its own line to separate batches."></textarea>
+      <div class="exec-bar">
+        <button class="go" id="btn-exec-editor" onclick="doExec('editor')" disabled>▶ Execute SQL</button>
+        <label class="chk"><input type="checkbox" id="chk-ac-editor"> Auto-commit batches</label>
+        <label class="chk"><input type="checkbox" id="chk-se-editor"> Stop on first error</label>
+        <button class="sec" onclick="document.getElementById('sql-editor').value=''">Clear</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Output Panel ── -->
+  <div class="panel stretch">
+    <div class="panel-title">Output</div>
+    <div class="panel-body">
+      <div id="output"></div>
+      <div class="out-toolbar">
+        <button class="sec" onclick="clearOut()">Clear Output</button>
+        <span style="font-size:11px;color:#666;margin-left:auto" id="row-count"></span>
+      </div>
+    </div>
+  </div>
+
+</div><!-- .main -->
+
+<div id="status-bar">
+  <div class="sb-dot" id="sb-dot"></div>
+  <span id="sb-text">Ready — Not connected</span>
+</div>
+
+<script>
+// ── state ────────────────────────────────────────────────────────────────
+let busy = false;
+
+// ── tabs ─────────────────────────────────────────────────────────────────
+function switchTab(name, el) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('on'));
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('on'));
+  el.classList.add('on');
+  document.getElementById('pane-' + name).classList.add('on');
+}
+
+// ── progress ─────────────────────────────────────────────────────────────
+function setProgress(on) {
+  document.getElementById('prog').classList.toggle('running', on);
+}
+
+// ── status bar ───────────────────────────────────────────────────────────
+function setSB(text, dotCls) {
+  document.getElementById('sb-text').textContent = text;
+  const d = document.getElementById('sb-dot');
+  d.className = 'sb-dot' + (dotCls ? ' ' + dotCls : '');
+}
+
+// ── output ───────────────────────────────────────────────────────────────
+function log(text, tag) {
+  const out = document.getElementById('output');
+  const ts  = new Date().toLocaleTimeString('en-GB');
+  const s   = document.createElement('span');
+  s.className = 'out-' + (tag || 'info');
+  s.textContent = '[' + ts + ']  ' + text + '\n';
+  out.appendChild(s);
+  out.scrollTop = out.scrollHeight;
+  const lines = out.querySelectorAll('span').length;
+  document.getElementById('row-count').textContent = lines + ' line(s)';
+}
+
+function clearOut() {
+  document.getElementById('output').innerHTML = '';
+  document.getElementById('row-count').textContent = '';
+}
+
+// ── SSE helper ───────────────────────────────────────────────────────────
+function streamJob(jobId, onMsg) {
+  return new Promise(resolve => {
+    const es = new EventSource('/api/stream/' + jobId);
+    es.onmessage = e => {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'log') log(msg.text, msg.tag);
+      if (onMsg) onMsg(msg);
+      if (msg.type === 'done' || msg.type === 'error') { es.close(); resolve(); }
+    };
+    es.onerror = () => { es.close(); resolve(); };
+  });
+}
+
+// ── browse ───────────────────────────────────────────────────────────────
+async function doBrowse(mode) {
+  log('Opening ' + mode + ' picker…', 'info');
+  try {
+    const r = await fetch('/api/browse?mode=' + mode);
+    const d = await r.json();
+    if (d.error) { log('Browse error: ' + d.error, 'error'); return; }
+    const inp = document.getElementById(mode === 'file' ? 'inp-file' : 'inp-folder');
+    if (d.path) { inp.value = d.path; log('Selected: ' + d.path, 'info'); }
+    else         { log('No path selected.', 'info'); }
+  } catch(e) { log('Browse failed: ' + e, 'error'); }
+}
+
+// ── connect ──────────────────────────────────────────────────────────────
+async function doConnect() {
+  if (busy) return;
+  busy = true;
+  setProgress(true);
+  setSB('Connecting — MFA window will open on this machine…', 'busy');
+  document.getElementById('s-dot').className = 'status-dot busy';
+  document.getElementById('btn-conn').disabled = true;
+
+  const body = {
+    server:     document.getElementById('inp-server').value.trim(),
+    database:   document.getElementById('inp-database').value.trim() || 'master',
+    username:   document.getElementById('inp-username').value.trim(),
+    trust_cert: document.getElementById('chk-trust').checked,
+  };
+
+  try {
+    const r = await fetch('/api/connect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const d = await r.json();
+    if (d.error) { onConnFail(d.error); return; }
+    await streamJob(d.job_id, msg => {
+      if (msg.type === 'connected') onConnected(msg.server, msg.database);
+      if (msg.type === 'error')     onConnFail(msg.text);
+    });
+  } catch(e) { onConnFail(String(e)); }
+}
+
+function onConnected(server, db) {
+  busy = false;
+  setProgress(false);
+  document.getElementById('s-dot').className = 'status-dot ok';
+  document.getElementById('btn-conn').disabled = false;
+  document.getElementById('btn-disc').disabled = false;
+  const cs = document.getElementById('conn-status');
+  cs.textContent = 'Connected: ' + server + ' / ' + db;
+  cs.className = 'ok';
+  ['btn-exec-file','btn-exec-folder','btn-exec-editor'].forEach(id =>
+    document.getElementById(id).disabled = false);
+  setSB('Connected ● ' + server + ' / ' + db, 'ok');
+  log('Connected to ' + server + ' / ' + db, 'success');
+}
+
+function onConnFail(err) {
+  busy = false;
+  setProgress(false);
+  document.getElementById('s-dot').className = 'status-dot err';
+  document.getElementById('btn-conn').disabled = false;
+  const cs = document.getElementById('conn-status');
+  cs.textContent = 'Connection failed';
+  cs.className = 'err';
+  setSB('Connection failed — see Output', 'err');
+}
+
+async function doDisconnect() {
+  await fetch('/api/disconnect', { method: 'POST' });
+  document.getElementById('s-dot').className = 'status-dot';
+  document.getElementById('btn-disc').disabled = true;
+  const cs = document.getElementById('conn-status');
+  cs.textContent = 'Not connected';
+  cs.className = '';
+  ['btn-exec-file','btn-exec-folder','btn-exec-editor'].forEach(id =>
+    document.getElementById(id).disabled = true);
+  setSB('Disconnected');
+  log('Disconnected.', 'info');
+}
+
+// ── execute ──────────────────────────────────────────────────────────────
+async function doExec(mode) {
+  if (busy) return;
+
+  const body = {
+    mode,
+    autocommit:    document.getElementById('chk-ac-' + mode).checked,
+    stop_on_error: document.getElementById('chk-se-' + mode).checked,
+  };
+
+  if (mode === 'file') {
+    body.path = document.getElementById('inp-file').value.trim();
+    if (!body.path) { alert('Please enter or browse to a .sql file.'); return; }
+  } else if (mode === 'folder') {
+    body.path = document.getElementById('inp-folder').value.trim();
+    if (!body.path) { alert('Please enter or browse to a folder.'); return; }
+  } else {
+    body.sql_text = document.getElementById('sql-editor').value;
+    if (!body.sql_text.trim()) { alert('SQL editor is empty.'); return; }
+  }
+
+  busy = true;
+  setProgress(true);
+  setSB('Executing…', 'busy');
+
+  try {
+    const r = await fetch('/api/execute', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const d = await r.json();
+    if (d.error) { log('Error: ' + d.error, 'error'); busy = false; setProgress(false); return; }
+    await streamJob(d.job_id);
+  } catch(e) {
+    log('Execute failed: ' + e, 'error');
+  }
+
+  busy = false;
+  setProgress(false);
+  setSB('Ready', 'ok');
+}
+
+// ── init ─────────────────────────────────────────────────────────────────
+(async function init() {
+  const r = await fetch('/api/status');
+  const d = await r.json();
+  if (d.connected) onConnected(d.server, d.database);
+  log('Azure SQL Editor ready.  Driver: ' + document.getElementById('driver-label').textContent, 'info');
+})();
+</script>
+</body>
+</html>

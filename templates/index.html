@@ -261,6 +261,15 @@
       padding: 5px 10px; border-top: 1px solid #3e3e42;
       background: #2d2d30; display: flex; gap: 8px; align-items: center; flex-shrink: 0;
     }
+    button.stop {
+      background: #8c1a1a; border: 1px solid #b52020;
+      animation: pulse-border 1.2s infinite;
+    }
+    button.stop:hover { background: #b52020; }
+    @keyframes pulse-border {
+      0%,100%{ box-shadow: 0 0 0 0 rgba(244,71,71,.0); }
+      50%     { box-shadow: 0 0 0 4px rgba(244,71,71,.35); }
+    }
 
     /* ── Status bar ──────────────────────────────────────────────── */
     #status-bar {
@@ -375,6 +384,7 @@
     <div id="out-unified"></div>
     <div class="out-toolbar">
       <button class="sec" onclick="clearOut()">Clear</button>
+      <button class="stop" id="btn-stop" onclick="doStop()" style="display:none">⏹ Stop Execution</button>
       <span style="font-size:11px;color:#555;margin-left:auto" id="row-count"></span>
     </div>
   </div>
@@ -389,6 +399,7 @@
 <script>
 // ── state ────────────────────────────────────────────────────────────────
 let busy = false;
+let _currentJobId = null;
 let _errCount = 0, _resultCount = 0, _totalRows = 0, _totalAffected = 0;
 
 // ── SQL source tabs ───────────────────────────────────────────────────────
@@ -569,15 +580,26 @@ function streamJob(jobId, onMsg) {
     const es = new EventSource('/api/stream/' + jobId);
     es.onmessage = e => {
       const msg = JSON.parse(e.data);
-      if (msg.type === 'log')      log(msg.text, msg.tag);
-      if (msg.type === 'table')    renderTable(msg);
-      if (msg.type === 'affected') renderAffected(msg);
-      if (msg.type === 'execerror') renderExecError(msg.file, msg.batch, msg.total, msg.text);
+      if (msg.type === 'log')        log(msg.text, msg.tag);
+      if (msg.type === 'table')      renderTable(msg);
+      if (msg.type === 'affected')   renderAffected(msg);
+      if (msg.type === 'execerror')  renderExecError(msg.file, msg.batch, msg.total, msg.text);
+      if (msg.type === 'cancelled')  { /* banner already logged */ }
       if (onMsg) onMsg(msg);
       if (msg.type === 'done' || msg.type === 'error') { es.close(); resolve(); }
     };
     es.onerror = () => { es.close(); resolve(); };
   });
+}
+
+// ── stop ───────────────────────────────────────────────────────────────
+async function doStop() {
+  if (!_currentJobId) return;
+  document.getElementById('btn-stop').disabled = true;
+  document.getElementById('btn-stop').textContent = '⏳ Stopping…';
+  try {
+    await fetch('/api/cancel/' + _currentJobId, { method: 'POST' });
+  } catch(e) { /* ignore */ }
 }
 
 // ── browse ───────────────────────────────────────────────────────────────
@@ -686,6 +708,7 @@ async function doExec(mode) {
 
   // Reset counters for new execution
   _errCount = _resultCount = _totalRows = _totalAffected = 0;
+  _currentJobId = null;
   document.getElementById('exec-summary').textContent = '';
   document.getElementById('err-summary').textContent = '';
 
@@ -701,11 +724,21 @@ async function doExec(mode) {
     });
     const d = await r.json();
     if (d.error) { log('Error: ' + d.error, 'error'); busy = false; setProgress(false); return; }
+    _currentJobId = d.job_id;
+    // Show stop button
+    const stopBtn = document.getElementById('btn-stop');
+    stopBtn.style.display = '';
+    stopBtn.disabled = false;
+    stopBtn.textContent = '⏹ Stop Execution';
     await streamJob(d.job_id);
   } catch(e) {
     log('Execute failed: ' + e, 'error');
   }
 
+  // Hide stop button
+  const stopBtn = document.getElementById('btn-stop');
+  stopBtn.style.display = 'none';
+  _currentJobId = null;
   busy = false;
   setProgress(false);
   updateSummary();

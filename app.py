@@ -55,13 +55,16 @@ _state = {
 }
 
 _jobs: dict[str, queue.Queue] = {}
+_cancel_flags: dict[str, threading.Event] = {}
 
 
-def _new_job() -> tuple[str, queue.Queue]:
-    jid = str(uuid.uuid4())
-    q: queue.Queue = queue.Queue()
-    _jobs[jid] = q
-    return jid, q
+def _new_job() -> tuple[str, queue.Queue, threading.Event]:
+    jid   = str(uuid.uuid4())
+    q: queue.Queue       = queue.Queue()
+    flag: threading.Event = threading.Event()
+    _jobs[jid]         = q
+    _cancel_flags[jid] = flag
+    return jid, q, flag
 
 
 # ---------------------------------------------------------------------------
@@ -156,7 +159,7 @@ def api_connect():
         "PacketSize=4096;"
     )
 
-    jid, q = _new_job()
+    jid, q, _ = _new_job()  # connect job — cancel not needed
 
     def worker():
         q.put({"type": "log", "tag": "info",
@@ -240,13 +243,14 @@ def api_execute():
             return jsonify({"error": "No .sql files found in that folder"}), 400
         items = [(os.path.basename(f), f) for f in files]
 
-    jid, q = _new_job()
+    jid, q, cancel_flag = _new_job()
 
     def worker():
         conn       = _state["connection"]
         total_ok   = 0
         total_err  = 0
         aborted    = False
+        cancelled  = False
 
         q.put({"type": "log", "tag": "header",
                "text": (
@@ -256,6 +260,11 @@ def api_execute():
                )})
 
         for fname, payload in items:
+            # Check for user cancellation before starting each file
+            if cancel_flag.is_set():
+                cancelled = True
+                break
+
             # payload = file path (str) or SQL content (str) when mode=='text'
             if mode == "text":
                 sql = payload
@@ -287,6 +296,10 @@ def api_execute():
             cursor.timeout = 0  # Command Timeout = 0
 
             for i, batch in enumerate(batches, 1):
+                # Check cancel before each batch
+                if cancel_flag.is_set():
+                    cancelled = True
+                    break
                 try:
                     cursor.execute(batch)
                     while True:
@@ -347,17 +360,36 @@ def api_execute():
             if aborted:
                 break
 
-        tag     = "success" if total_err == 0 else "error"
-        summary = (f"Finished — {len(items)} file(s), "
-                   f"{total_ok + total_err} batch(es): "
-                   f"{total_ok} OK, {total_err} failed.")
-        if aborted:
-            summary += "  [Stopped after first error]"
+        tag     = "success" if total_err == 0 and not cancelled else "error"
+        if cancelled:
+            summary = (
+                f"Stopped by user — {total_ok + total_err} batch(es) processed: "
+                f"{total_ok} OK, {total_err} failed."
+            )
+            q.put({"type": "log", "tag": "error", "text": "⏹ Execution cancelled by user."})
+            q.put({"type": "cancelled"})
+        else:
+            summary = (
+                f"Finished — {len(items)} file(s), "
+                f"{total_ok + total_err} batch(es): "
+                f"{total_ok} OK, {total_err} failed."
+            )
+            if aborted:
+                summary += "  [Stopped after first error]"
         q.put({"type": "log", "tag": tag, "text": summary})
         q.put({"type": "done"})
 
     threading.Thread(target=worker, daemon=True).start()
     return jsonify({"job_id": jid})
+
+
+@app.route("/api/cancel/<job_id>", methods=["POST"])
+def api_cancel(job_id):
+    flag = _cancel_flags.get(job_id)
+    if flag:
+        flag.set()
+        return jsonify({"ok": True})
+    return jsonify({"ok": False, "error": "Job not found"}), 404
 
 
 @app.route("/api/stream/<job_id>")
@@ -379,6 +411,7 @@ def api_stream(job_id):
                     break
         finally:
             _jobs.pop(job_id, None)
+            _cancel_flags.pop(job_id, None)
 
     return Response(
         generate(),

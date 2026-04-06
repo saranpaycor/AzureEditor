@@ -293,11 +293,32 @@ def api_execute():
                         if cursor.description:
                             cols = [c[0] for c in cursor.description]
                             rows = cursor.fetchall()
-                            table = _format_table(cols, rows)
+                            truncated = len(rows) > 500
+                            # Structured table message for rich HTML rendering
+                            q.put({
+                                "type":      "table",
+                                "file":      fname,
+                                "batch":     i,
+                                "total":     len(batches),
+                                "columns":   cols,
+                                "rows":      [
+                                    [None if v is None else str(v) for v in row]
+                                    for row in rows[:500]
+                                ],
+                                "row_count": len(rows),
+                                "truncated": truncated,
+                            })
                             q.put({"type": "log", "tag": "data",
-                                   "text": f"  Batch {i}/{len(batches)}: {len(rows)} row(s) returned\n{table}"})
+                                   "text": f"  Batch {i}/{len(batches)}: {len(rows)} row(s) returned."})
                         else:
                             rc = max(cursor.rowcount, 0)
+                            q.put({
+                                "type":  "affected",
+                                "file":  fname,
+                                "batch": i,
+                                "total": len(batches),
+                                "count": rc,
+                            })
                             q.put({"type": "log", "tag": "info",
                                    "text": f"  Batch {i}/{len(batches)}: {rc} row(s) affected."})
                         if not cursor.nextset():
@@ -306,8 +327,12 @@ def api_execute():
                         conn.commit()
                     total_ok += 1
                 except Exception as exc:
+                    err_text = str(exc)
                     q.put({"type": "log", "tag": "error",
-                           "text": f"  Batch {i}/{len(batches)} FAILED: {exc}"})
+                           "text": f"  Batch {i}/{len(batches)} FAILED: {err_text}"})
+                    # Also send structured error for Results panel inline display
+                    q.put({"type": "execerror", "file": fname,
+                           "batch": i, "total": len(batches), "text": err_text})
                     total_err += 1
                     if stop_on_err:
                         aborted = True

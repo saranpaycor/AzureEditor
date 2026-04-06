@@ -186,33 +186,88 @@
       flex-wrap: wrap;
     }
 
-    /* ── Output ──────────────────────────────────────────────────── */
-    #output {
-      flex: 1;
+    /* ── Output tabs ─────────────────────────────────────────────── */
+    .out-tabs { display: flex; border-bottom: 1px solid #3e3e42; background: #2d2d30; flex-shrink: 0; }
+    .out-tab {
+      padding: 5px 16px; font-size: 11px; cursor: pointer;
+      color: #777; border-bottom: 2px solid transparent; user-select: none;
+    }
+    .out-tab.on { color: #d4d4d4; border-bottom-color: #0078d4; }
+    .out-tab:hover { color: #aaa; }
+    .out-tab .badge-cnt {
+      display: inline-block; background: #f44747; color: #fff;
+      font-size: 9px; border-radius: 8px; padding: 0 5px; margin-left: 4px; vertical-align: middle;
+    }
+
+    .out-body { flex: 1; overflow-y: auto; min-height: 0; }
+
+    /* ── Messages pane ───────────────────────────────────────────── */
+    #out-messages {
       font-family: 'Consolas', 'Courier New', monospace;
-      font-size: 12px;
-      line-height: 1.5;
-      background: #0d0d0d;
-      color: #d4d4d4;
-      padding: 10px 12px;
-      overflow-y: auto;
-      white-space: pre-wrap;
-      word-break: break-word;
+      font-size: 12px; line-height: 1.55;
+      background: #0d0d0d; color: #d4d4d4;
+      padding: 10px 12px; white-space: pre-wrap; word-break: break-word;
     }
     .out-info    { color: #9cdcfe; }
     .out-error   { color: #f44747; }
     .out-success { color: #4ec9b0; }
     .out-header  { color: #dcdcaa; font-weight: bold; }
-    .out-data    { color: #ce9178; }
+    .out-data    { color: #4ec9b0; }
+
+    /* ── Results pane ────────────────────────────────────────────── */
+    #out-results { background: #141414; padding: 0; }
+
+    .result-block { border-bottom: 1px solid #222; }
+    .result-block-header {
+      padding: 5px 12px; font-size: 11px; font-weight: 600;
+      color: #dcdcaa; background: #252526; border-bottom: 1px solid #2a2a2a;
+      display: flex; align-items: center; gap: 8px;
+      position: sticky; top: 0; z-index: 2;
+    }
+    .pill {
+      font-size: 10px; padding: 1px 8px; border-radius: 10px;
+      color: #fff; font-weight: 700;
+    }
+    .pill-rows { background: #0d6a50; }
+    .pill-aff  { background: #0e639c; }
+    .pill-err  { background: #6b1414; }
+
+    .table-wrap { overflow-x: auto; max-height: 320px; overflow-y: auto; }
+    .result-table {
+      border-collapse: collapse;
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 12px; width: max-content; min-width: 100%;
+    }
+    .result-table th {
+      background: #2d2d30; color: #9cdcfe; padding: 5px 12px;
+      text-align: left; border: 1px solid #3e3e42; font-weight: 600;
+      position: sticky; top: 0; white-space: nowrap; z-index: 1;
+    }
+    .result-table td {
+      padding: 3px 12px; border: 1px solid #222; color: #d4d4d4;
+      max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .result-table tr:nth-child(even) td { background: #1a1a1a; }
+    .result-table tr:hover td { background: #264f78 !important; color: #fff; }
+    .result-table td.null-val { color: #555; font-style: italic; }
+    .truncated-note { padding: 4px 12px; font-size: 11px; color: #888; font-style: italic; background: #1a1a1a; }
+
+    .error-banner {
+      background: #2a0a0a; border-left: 3px solid #f44747;
+      padding: 8px 14px; font-family: 'Consolas', monospace;
+      font-size: 12px; color: #f44747; white-space: pre-wrap; word-break: break-word;
+    }
+    .affected-row {
+      padding: 6px 14px; font-size: 12px; color: #4ec9b0;
+      font-family: 'Consolas', monospace;
+    }
+    .no-results {
+      padding: 20px; font-size: 12px; color: #444; font-style: italic; text-align: center;
+    }
 
     .out-toolbar {
-      padding: 5px 10px;
-      border-top: 1px solid #3e3e42;
-      background: #2d2d30;
-      display: flex;
-      gap: 8px;
-      align-items: center;
-      flex-shrink: 0;
+      padding: 5px 10px; border-top: 1px solid #3e3e42;
+      background: #2d2d30; display: flex; gap: 8px; align-items: center; flex-shrink: 0;
     }
 
     /* ── Status bar ──────────────────────────────────────────────── */
@@ -320,13 +375,25 @@
 
   <!-- ── Output Panel ── -->
   <div class="panel stretch">
-    <div class="panel-title">Output</div>
-    <div class="panel-body">
-      <div id="output"></div>
-      <div class="out-toolbar">
-        <button class="sec" onclick="clearOut()">Clear Output</button>
-        <span style="font-size:11px;color:#666;margin-left:auto" id="row-count"></span>
+    <div class="panel-title">
+      Output
+      <span id="exec-summary" style="font-weight:400;font-size:10px;color:#9cdcfe;margin-left:14px"></span>
+    </div>
+    <div class="out-tabs">
+      <div class="out-tab on" id="otab-results"  onclick="switchOutTab('results',this)">
+        Results <span id="badge-results" class="badge-cnt" style="display:none">0</span>
       </div>
+      <div class="out-tab"   id="otab-messages" onclick="switchOutTab('messages',this)">
+        Messages <span id="badge-errors" class="badge-cnt" style="display:none">0</span>
+      </div>
+    </div>
+    <div class="out-body" id="out-results">
+      <div class="no-results">No results yet — execute a query to see results here.</div>
+    </div>
+    <div class="out-body" id="out-messages" style="display:none"></div>
+    <div class="out-toolbar">
+      <button class="sec" onclick="clearOut()">Clear</button>
+      <span style="font-size:11px;color:#555;margin-left:auto" id="row-count"></span>
     </div>
   </div>
 
@@ -340,13 +407,24 @@
 <script>
 // ── state ────────────────────────────────────────────────────────────────
 let busy = false;
+let _errCount = 0, _resultCount = 0, _totalRows = 0, _totalAffected = 0;
 
-// ── tabs ─────────────────────────────────────────────────────────────────
+// ── output tabs ──────────────────────────────────────────────────────────
 function switchTab(name, el) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('on'));
   document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('on'));
   el.classList.add('on');
   document.getElementById('pane-' + name).classList.add('on');
+}
+
+function switchOutTab(name, el) {
+  document.querySelectorAll('.out-tab').forEach(t => t.classList.remove('on'));
+  document.getElementById('out-results').style.display  = name === 'results'  ? '' : 'none';
+  document.getElementById('out-messages').style.display = name === 'messages' ? '' : 'none';
+  el.classList.add('on');
+  // Clear badge for the tab we just switched to
+  if (name === 'messages') { document.getElementById('badge-errors').style.display = 'none'; _errCount = 0; }
+  if (name === 'results')  { document.getElementById('badge-results').style.display = 'none'; _resultCount = 0; }
 }
 
 // ── progress ─────────────────────────────────────────────────────────────
@@ -361,22 +439,184 @@ function setSB(text, dotCls) {
   d.className = 'sb-dot' + (dotCls ? ' ' + dotCls : '');
 }
 
-// ── output ───────────────────────────────────────────────────────────────
+// ── messages (log) pane ──────────────────────────────────────────────────
 function log(text, tag) {
-  const out = document.getElementById('output');
-  const ts  = new Date().toLocaleTimeString('en-GB');
-  const s   = document.createElement('span');
+  const pane = document.getElementById('out-messages');
+  const ts   = new Date().toLocaleTimeString('en-GB');
+  const s    = document.createElement('span');
   s.className = 'out-' + (tag || 'info');
   s.textContent = '[' + ts + ']  ' + text + '\n';
-  out.appendChild(s);
-  out.scrollTop = out.scrollHeight;
-  const lines = out.querySelectorAll('span').length;
-  document.getElementById('row-count').textContent = lines + ' line(s)';
+  pane.appendChild(s);
+  pane.scrollTop = pane.scrollHeight;
+
+  // Badge on Messages tab if it's not visible
+  if (tag === 'error') {
+    _errCount++;
+    const isVisible = document.getElementById('out-messages').style.display !== 'none';
+    if (!isVisible) {
+      const b = document.getElementById('badge-errors');
+      b.textContent = _errCount;
+      b.style.display = '';
+    }
+  }
+
+  updateRowCount();
+}
+
+// ── results pane ─────────────────────────────────────────────────────────
+function renderTable(msg) {
+  const pane = document.getElementById('out-results');
+
+  // Remove placeholder
+  const ph = pane.querySelector('.no-results');
+  if (ph) ph.remove();
+
+  _totalRows += msg.row_count;
+  _resultCount++;
+  updateSummary();
+
+  // Badge on Results tab if not visible
+  const isVisible = document.getElementById('out-results').style.display !== 'none';
+  if (!isVisible) {
+    const b = document.getElementById('badge-results');
+    b.textContent = _resultCount;
+    b.style.display = '';
+  }
+
+  const block = document.createElement('div');
+  block.className = 'result-block';
+
+  // Header row
+  const hdr = document.createElement('div');
+  hdr.className = 'result-block-header';
+  hdr.innerHTML =
+    `<span>${escHtml(msg.file)} — Batch ${msg.batch}/${msg.total}</span>` +
+    `<span class="pill pill-rows">${msg.row_count} row${msg.row_count !== 1 ? 's' : ''}</span>`;
+  block.appendChild(hdr);
+
+  if (msg.row_count === 0) {
+    const nr = document.createElement('div');
+    nr.className = 'affected-row';
+    nr.textContent = '(no rows returned)';
+    block.appendChild(nr);
+  } else {
+    const wrap = document.createElement('div');
+    wrap.className = 'table-wrap';
+
+    const tbl = document.createElement('table');
+    tbl.className = 'result-table';
+
+    // thead
+    const thead = tbl.createTHead();
+    const hr = thead.insertRow();
+    msg.columns.forEach(c => {
+      const th = document.createElement('th');
+      th.textContent = c;
+      hr.appendChild(th);
+    });
+
+    // tbody
+    const tbody = tbl.createTBody();
+    msg.rows.forEach(row => {
+      const tr = tbody.insertRow();
+      row.forEach(v => {
+        const td = tr.insertCell();
+        if (v === null) {
+          td.textContent = 'NULL';
+          td.className = 'null-val';
+        } else {
+          td.textContent = v;
+        }
+      });
+    });
+
+    wrap.appendChild(tbl);
+    block.appendChild(wrap);
+
+    if (msg.truncated) {
+      const note = document.createElement('div');
+      note.className = 'truncated-note';
+      note.textContent = `⚠ Showing first 500 of ${msg.row_count} rows`;
+      block.appendChild(note);
+    }
+  }
+
+  pane.appendChild(block);
+  pane.scrollTop = pane.scrollHeight;
+}
+
+function renderAffected(msg) {
+  const pane = document.getElementById('out-results');
+  const ph = pane.querySelector('.no-results');
+  if (ph) ph.remove();
+
+  _totalAffected += msg.count;
+  updateSummary();
+
+  const row = document.createElement('div');
+  row.className = 'affected-row';
+  row.textContent =
+    `${escHtml(msg.file)} — Batch ${msg.batch}/${msg.total}:  ${msg.count} row${msg.count !== 1 ? 's' : ''} affected`;
+  pane.appendChild(row);
+  pane.scrollTop = pane.scrollHeight;
+}
+
+function renderExecError(file, batch, total, text) {
+  const pane = document.getElementById('out-results');
+  const ph = pane.querySelector('.no-results');
+  if (ph) ph.remove();
+
+  const block = document.createElement('div');
+  block.className = 'result-block';
+
+  const hdr = document.createElement('div');
+  hdr.className = 'result-block-header';
+  hdr.innerHTML =
+    `<span>${escHtml(file)} — Batch ${batch}/${total} FAILED</span>` +
+    `<span class="pill pill-err">ERROR</span>`;
+  block.appendChild(hdr);
+
+  const banner = document.createElement('div');
+  banner.className = 'error-banner';
+  banner.textContent = text;
+  block.appendChild(banner);
+
+  pane.appendChild(block);
+  pane.scrollTop = pane.scrollHeight;
+
+  // Auto-switch to results so user sees the error inline
+  document.querySelectorAll('.out-tab').forEach(t => t.classList.remove('on'));
+  document.getElementById('otab-results').classList.add('on');
+  document.getElementById('out-results').style.display  = '';
+  document.getElementById('out-messages').style.display = 'none';
+}
+
+// ── helpers ──────────────────────────────────────────────────────────────
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function updateSummary() {
+  const parts = [];
+  if (_resultCount > 0) parts.push(`${_resultCount} result set${_resultCount !== 1 ? 's' : ''}, ${_totalRows} rows`);
+  if (_totalAffected > 0) parts.push(`${_totalAffected} affected`);
+  document.getElementById('exec-summary').textContent = parts.join('  •  ');
+}
+
+function updateRowCount() {
+  const n = document.getElementById('out-messages').querySelectorAll('span').length;
+  document.getElementById('row-count').textContent = n + ' message(s)';
 }
 
 function clearOut() {
-  document.getElementById('output').innerHTML = '';
+  document.getElementById('out-results').innerHTML =
+    '<div class="no-results">No results yet — execute a query to see results here.</div>';
+  document.getElementById('out-messages').innerHTML = '';
+  document.getElementById('exec-summary').textContent = '';
   document.getElementById('row-count').textContent = '';
+  document.getElementById('badge-errors').style.display = 'none';
+  document.getElementById('badge-results').style.display = 'none';
+  _errCount = _resultCount = _totalRows = _totalAffected = 0;
 }
 
 // ── SSE helper ───────────────────────────────────────────────────────────
@@ -385,7 +625,10 @@ function streamJob(jobId, onMsg) {
     const es = new EventSource('/api/stream/' + jobId);
     es.onmessage = e => {
       const msg = JSON.parse(e.data);
-      if (msg.type === 'log') log(msg.text, msg.tag);
+      if (msg.type === 'log')      log(msg.text, msg.tag);
+      if (msg.type === 'table')    renderTable(msg);
+      if (msg.type === 'affected') renderAffected(msg);
+      if (msg.type === 'execerror') renderExecError(msg.file, msg.batch, msg.total, msg.text);
       if (onMsg) onMsg(msg);
       if (msg.type === 'done' || msg.type === 'error') { es.close(); resolve(); }
     };
@@ -460,7 +703,12 @@ function onConnFail(err) {
   const cs = document.getElementById('conn-status');
   cs.textContent = 'Connection failed';
   cs.className = 'err';
-  setSB('Connection failed — see Output', 'err');
+  setSB('Connection failed — see Messages', 'err');
+  // Auto-switch to Messages tab so errors are visible
+  document.querySelectorAll('.out-tab').forEach(t => t.classList.remove('on'));
+  document.getElementById('otab-messages').classList.add('on');
+  document.getElementById('out-results').style.display  = 'none';
+  document.getElementById('out-messages').style.display = '';
 }
 
 async function doDisconnect() {
@@ -497,6 +745,17 @@ async function doExec(mode) {
     if (!body.sql_text.trim()) { alert('SQL editor is empty.'); return; }
   }
 
+  // Reset result counters and auto-switch to Results tab
+  _resultCount = _totalRows = _totalAffected = 0;
+  document.getElementById('exec-summary').textContent = '';
+  document.querySelectorAll('.out-tab').forEach(t => t.classList.remove('on'));
+  document.getElementById('otab-results').classList.add('on');
+  document.getElementById('out-results').style.display  = '';
+  document.getElementById('out-messages').style.display = 'none';
+  document.getElementById('badge-errors').style.display  = 'none';
+  document.getElementById('badge-results').style.display = 'none';
+  _errCount = 0;
+
   busy = true;
   setProgress(true);
   setSB('Executing…', 'busy');
@@ -516,6 +775,7 @@ async function doExec(mode) {
 
   busy = false;
   setProgress(false);
+  updateSummary();
   setSB('Ready', 'ok');
 }
 
